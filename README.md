@@ -15,6 +15,8 @@ fnResizeTableCallback: Call function every time the table is resized
 
 allowResize (default: true): Allow table to be resized
 
+allowHeaderDoubleClick (default: true): Double-clicking on header field will expand to "full size". double-clicking again will reduce to minimum size.
+
 Other options remain the same as those in the <a href="http://datatables.net/extras/colreorder/">ColReorder</a> plugin.
 
 Basic initialization:
