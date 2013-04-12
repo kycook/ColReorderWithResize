@@ -254,7 +254,18 @@
     * @param {object} opts ColReorder options
     */
     var ColReorder = function (dt, opts) {
+                $(dt.nTableWrapper).width($(dt.nTable).width());
+                // make sure the headers are the same width as the rest of table
+                dt.aoDrawCallback.push({
+                    "fn": function ( oSettings ) {
+                        $(oSettings.nTableWrapper).width($(oSettings.nTable).width());
+                    },
+                    "sName": "Resize headers"
+                });
         var oDTSettings;
+        // Set the table to minimum size so that it doesn't stretch too far
+        $(dt.nTable).width("10px");
+
 
         // @todo - This should really be a static method offered by DataTables
         if (dt.fnSettings) {
@@ -294,7 +305,6 @@
 
             return null;
         }
-
 
         /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
         * Public class variables
@@ -336,6 +346,17 @@
             */
             "allowHeaderDoubleClick": true,
 
+            /**
+            * Expand or collapse columns based on header double clicks
+            * If set to true will use the default menu
+            * - If set to false, no context menu will be used
+            * - If set to true, the default context menu will be used
+            * - If given a function, that function will be called
+            *  @property headerContextMenu
+            *  @type     boolean/function
+            *  @default  true
+            */
+            "headerContextMenu": true,
 
             /**
             * Allow Resize functionnality
@@ -420,7 +441,7 @@
             * @type     function
             * @default  function(table, newSize, sizeChange) {}
             */
-            "fnbResizeTableCallback": function(){},
+            "fnResizeTableCallback": function(){},
 
             /**
             * Add table-layout:fixed css to the table
@@ -582,6 +603,36 @@
             return this;
         },
 
+        /**
+        * fnGetColumnSelectList - return html list of columns columns, with selected columns checked
+        *  @return {string} Html string
+        */
+        fnGetColumnSelectList : function() {
+
+            var tp,i;
+            var availableFields = this.s.dt.aoColumns;
+            var html ='<div class="selcol1">';
+            var d2 = (availableFields.length-1) /2;
+            for (i=0;i<availableFields.length;i++) {
+                tp = "col"+(i%2);
+                if (i > d2) {
+                    html += '</div><div class="selcol2">';
+                    d2 = 99999999;
+                }
+                var selected = availableFields[i].bVisible;
+                var title = availableFields[i].sTitle;
+                var mData = availableFields[i].mData;
+                html += '<label class="'+tp+'">'+
+                        '<input name="columns" type="checkbox" checked="'+(selected ? "checked" : "")+'" value="'+mData+'">'+
+                        title + '</label>';
+            }
+            html  += "</div>";
+
+            return html;
+        },
+
+
+
 
         /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
         * Private methods (they are of course public in JS, but recommended as private)
@@ -626,6 +677,17 @@
             /* Allow header double click */
             if (typeof this.s.init.allowHeaderDoubleClick != 'undefined') {
                 this.s.allowHeaderDoubleClick = this.s.init.allowHeaderDoubleClick;
+            }
+
+            /* Allow header contextmenu */
+            if (typeof this.s.init.headerContextMenu == 'function') {
+                this.s.headerContextMenu = this.s.init.headerContextMenu;
+            }
+            else if (this.s.init.headerContextMenu) {
+                this.s.headerContextMenu = this._fnDefaultContextMenu;
+            }
+            else {
+                this.s.headerContextMenu = false;
             }
 
             if (typeof this.s.init.minResizeWidth != 'undefined') {
@@ -715,6 +777,60 @@
                         that._fnResizeColumns.call(that);
                 }
             }
+        },
+
+        /**
+        * Default Context menu to display the column selectors
+        *  @method  _fnDefaultContextMenu
+        *  @param   Object e Event object of the contextmenu (right click) event
+        *  @param   Object settings The datatables settings object
+        *  @param   Object ColReorderObj The ColReorder object  
+        *  @returns void
+        *  @private 
+        */
+        "_fnDefaultContextMenu" : function(e,settings,thatObj) {
+                var colSelects = thatObj.fnGetColumnSelectList();
+                var myelm = $('<div></div>');
+                myelm.append(colSelects);
+                $("input",myelm).off("change").on("change", function(e) {
+                    var index = $('input',myelm).index($(this));
+                    var checked = $(this).is(":checked");
+                    settings.oInstance.fnSetColumnVis(index,checked,true);
+                });
+                
+            if (jQuery.ui) {
+                myelm.dialog({
+                    "position":[e.clientX,e.clientY],
+                    "title":"Select Columns",
+                    "modal":true,
+                    "autoOpen":true,
+                    "close":function(event,ui) {
+                        myelm.remove();
+                    }
+                });
+            }
+            else {
+                var overlay = $('<div class="overlayDiv"></div>').appendTo("body").css({"position":"fixed",top:0,left:0, width:"100%",height:"100%","z-index":5000});
+                myelm.appendTo("body").css({position:"absolute", top:e.clientY-2, "background-color":"grey", left:e.clientX-2, "z-index":5005, "border":"1px solid black"});
+                var timer = 0;
+                myelm.mouseover(function(e) {
+                    if (timer) {
+                        clearTimeout(timer);
+                    }
+                });
+
+                myelm.mouseout(function(e) {
+                    if (timer) {
+                        clearTimeout(timer);
+                    }
+                    timer = setTimeout(
+                        function() {
+                        overlay.remove();
+                        myelm.remove();
+                    },200);
+                });
+            }
+
         },
 
         /**
@@ -823,9 +939,12 @@
         "_fnMouseListener": function (i, nTh) {
             var that = this;
 
+            var thead = $(nTh).closest('thead');
             // listen to mousemove event for resize
             if (this.s.allowResize) {
-                $(nTh).bind('mousemove.ColReorder', function (e) {
+                //$(nTh).bind('mousemove.ColReorder', function (e) {
+                thead.bind('mousemove.ColReorder', function (e) {
+                    var nTable = that.s.dt.nTable;
                     if (that.dom.drag === null && that.dom.resize === null) {
                         /* Store information about the mouse position */
                         var nThTarget = e.target.nodeName == "TH" ? e.target : $(e.target).parents('TH')[0];
@@ -835,15 +954,23 @@
                         /* are we on the col border (if so, resize col) */
                         if (Math.abs(e.pageX - Math.round(offset.left + nLength)) <= 5) {
                             $(nThTarget).css({ 'cursor': 'col-resize' });
-                            // catch gabs between cells
-                            $(nThTarget).closest('table').css({'cursor' : 'col-resize'});
+                            // catch gaps between cells
+                            //$(nTable).css({'cursor' : 'col-resize'});
+                            that.dom.resizeCol = "right";
+                        }
+                        else if ((e.pageX - offset.left) < 5) {
+                            $(nThTarget).css({'cursor' : 'col-resize'});
+                            //$(nTable).css({'cursor' : 'col-resize'});
+                            that.dom.resizeCol = "left";
                         }
                         else {
                             $(nThTarget).css({ 'cursor': 'pointer' });
-                            $(nThTarget).closest('table').css({'cursor' : 'pointer'});
+                            //$(nTable).css({'cursor' : 'pointer'});
                         }
                     }
                 });
+
+
             }
 
             $(nTh).on('mousedown.ColReorder', function (e) {
@@ -852,11 +979,20 @@
             });
 
             // Add doubleclick also
+            // It is best to disable sorting if using double click 
             if (this.s.allowHeaderDoubleClick) {
                 $(nTh).on("dblclick.ColReorder", function(e) {
                     e.preventDefault();
                     that._fnDblClick.call(that, e, nTh, i);
                 });
+            }
+
+            if (this.s.headerContextMenu) {
+                $(nTh).off("contextmenu.ColReorder").on("contextmenu.ColReorder", function(e) {
+                    e.preventDefault();
+                    that.s.headerContextMenu.call(this,e,that.s.dt,that);
+                });
+
             }
         },
 
@@ -876,10 +1012,29 @@
 
             var realWidths = $.map($('th',$(this.s.dt.nThead)), function(l) {return $(l).width();});
             var nThWidth = $(nTh).width();
-
-           
             var newWidth;
+            var that = this;
+
+            var tableResizeIt = function() {
+                var newTableWidth = tableWidth + newWidth - nThWidth;
+
+                $(nTable).width(newTableWidth);
+                $(nTable).css('table-layout',"fixed");
+                $(nTh).width(newWidth);
+
+                aoColumns[index].sWidth = newWidth+"px";
+                that.s.fnResizeTableCallback(nTable,newTableWidth,newTableWidth-tableWidth);
+            };
+           
             if ($(nTh).hasClass('maxwidth')) {
+                var newHead = $(nTable).clone();
+                $('tbody', newHead).remove();
+                var newItem = $(nTh).clone();
+                newItem.wrap("<tr />");
+                newItem.wrap("<table />");
+                $(nTable).css({'table-layout':"auto","width":"auto"});
+                this.s.dt.oFeatures.bAutoWidth = true;
+                // Lets try resizing to headers instead
                 newWidth = this.s.minResizeWidth;
                 $(nTh).removeClass('maxwidth');
             }
@@ -889,17 +1044,10 @@
                 newWidth = $('th',nTable).eq(index).width();
 
                 $(nTh).addClass("maxwidth");
+                tableResizeIt();
             }
 
-            var newTableWidth = tableWidth + newWidth - nThWidth;
 
-            $(nTable).width(newTableWidth);
-            $(nTable).css('table-layout',"fixed");
-            $(nTh).width(newWidth);
-
-            aoColumns[index].sWidth = newWidth+"px";
-
-            this.s.fnResizeTableCallback(nTable,newTableWidth,newTableWidth-tableWidth);
 
         },
 
@@ -914,18 +1062,35 @@
         */
         "_fnMouseDown": function (e, nTh, i) {
             var that = this;
-            var target, offset, idx, nThNext;
+            var target, offset, idx, nThNext, nThPrev;
             /* are we resizing a column ? */
             if ($(nTh).css('cursor') == 'col-resize') {
+                // are we at the right or left?
                 this.s.mouse.startX = e.pageX;
-                this.s.mouse.startWidth = $(nTh).width();
                 this.s.tableWidth = $(nTh).closest("table").width();
-                this.s.mouse.resizeElem = $(nTh);
-                nThNext = $(nTh).next();
-                this.s.mouse.nextStartWidth = $(nThNext).width();
-                this.s.mouse.targetIndex = $('th', nTh.parentNode).index(nTh);
-                this.s.mouse.fromIndex = this.s.dt.oInstance.oApi._fnVisibleToColumnIndex(this.s.dt,
-                    this.s.mouse.targetIndex);
+
+
+                // If we are at the left end, we expand the previous column
+                if (this.dom.resizeCol == "left") {
+                    nThPrev = $(nTh).prev();
+                    this.s.mouse.startWidth = $(nThPrev).width();
+                    this.s.mouse.resizeElem = $(nThPrev);
+                    nThNext = $(nTh).next();
+                    this.s.mouse.nextStartWidth = $(nTh).width();
+                    this.s.mouse.targetIndex = $('th', nTh.parentNode).index(nThPrev);
+                    this.s.mouse.fromIndex = this.s.dt.oInstance.oApi._fnVisibleToColumnIndex(this.s.dt, this.s.mouse.targetIndex);
+                }
+
+                // If we are at the right end of column, we expand the current column
+                else {
+                    this.s.mouse.startWidth = $(nTh).width();
+                    this.s.mouse.resizeElem = $(nTh);
+                    nThNext = $(nTh).next();
+                    this.s.mouse.nextStartWidth = $(nThNext).width();
+                    this.s.mouse.targetIndex = $('th', nTh.parentNode).index(nTh);
+                    this.s.mouse.fromIndex = this.s.dt.oInstance.oApi._fnVisibleToColumnIndex(this.s.dt, this.s.mouse.targetIndex);
+                }
+
                 that.dom.resize = true;
                 ////////////////////
                 //Martin Marchetta 
@@ -1154,7 +1319,12 @@
                 var nextVisibleColumnIndex;
                 var previousVisibleColumnIndex;
                 var scrollXEnabled;
-
+                var resizeCol = this.dom.resizeCol;
+/*
+                if (resizeCol == 'right') {
+                    colResized++;
+                }
+*/
                 for (i = 0; i < this.s.dt.aoColumns.length; i++) {
                     if (this.s.dt.aoColumns[i]._ColReorder_iOrigCol === colResized) {
                         aoColumnsColumnindex = i;
@@ -1198,9 +1368,12 @@
 
                 //Update the internal storage of the table's width (in case we changed it because the user resized some column and scrollX was enabled
                 if (scrollXEnabled && $('div.dataTables_scrollHead', this.s.dt.nTableWrapper).length) {
-                    if ($('div.dataTables_scrollHead', this.s.dt.nTableWrapper).length > 0)
+                    if ($('div.dataTables_scrollHead', this.s.dt.nTableWrapper).length > 0) {
                         this.table_size = $($('div.dataTables_scrollHead', this.s.dt.nTableWrapper)[0].childNodes[0].childNodes[0]).width();
+                    }
                 }
+
+                $(this.s.dt.nTableWrapper).width($(this.s.dt.nTable).width());
 
                 //Save the state
                 this.s.dt.oInstance.oApi._fnSaveState(this.s.dt);
@@ -1566,7 +1739,6 @@
                 else {
                     table.oApi._fnLog(settings, 1, "ColReorder attempted to initialise twice. Ignoring second");
                 }
-                $(settings.nTable).width($(settings.nTable).width()).css('table-layout','fixed');
 
                 return null; /* No node for DataTables to insert */
             },
