@@ -763,13 +763,21 @@ ColReorder.prototype = {
   			{
   				iToPoint++;
   			}
-  			
+
   			if ( aoColumns[i].bVisible )
   			{
-  				this.s.aoTargets.push( {
-  					"x":  $(aoColumns[i].nTh).offset().left + $(aoColumns[i].nTh).outerWidth(),
-  					"to": iToPoint
-  				} );
+          // This is a fix for outerWidth returning an object instead of a number
+          var columnWidth;
+          if (typeof $(aoColumns[i].nTh).outerWidth() === 'number') {
+            columnWidth = $(aoColumns[i].nTh).outerWidth();
+          }
+          else {
+            columnWidth = $(aoColumns[i].nTh).width();
+          }
+          this.s.aoTargets.push( {
+            "x":  $(aoColumns[i].nTh).offset().left + columnWidth,
+            "to": iToPoint
+          } );
   			}
   		}
   		
