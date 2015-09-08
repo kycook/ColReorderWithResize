@@ -205,6 +205,16 @@
 
         /* Array array - internal data anodes cache */
         for (i = 0, iLen = oSettings.aoData.length; i < iLen; i++) {
+            if ($.isArray(oSettings.aoData[i]._aData))
+            {
+                // if data is simple array, swap elements by index
+                fnArraySwitch(oSettings.aoData[i]._aData, iFrom, iTo);
+            }
+            else if ($.isArray(oSettings.aoData[i].anCells))
+            {
+                // if data is row object, swap the internal cells representation instead (datatables uses this when setting column visible)
+                fnArraySwitch(oSettings.aoData[i].anCells, iFrom, iTo);
+            }
             fnArraySwitch(oSettings.aoData[i]._anHidden, iFrom, iTo);
         }
 
